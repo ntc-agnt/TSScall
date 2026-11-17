@@ -1,9 +1,17 @@
 # TSScall benchmark harness
 
-Submits a matrix of SLURM jobs to compare the **original** and **refactored**
-`TSScall.py` on real data, to characterize how time and peak memory scale with
-the calling threshold and with input pre-filtering, and to analyze how the
+Submits a matrix of SLURM jobs to compare three versions of `TSScall.py` on real
+data — **original** (pristine Lavender), **refac** (byte-identical bin_winner
+refactor, changes 1–4), and **improved** (the full changes 1–8 build with the
+terminal-uTSS fixes) — to characterize how time and peak memory scale with the
+calling threshold and with input pre-filtering, and to analyze how the
 called-peak universe changes across those levels.
+
+Each version is run **bare**: the harness invokes `python <TSScall.py> …`
+directly on the input bedGraphs. This does **not** go through GeneAnnotationScripts
+(GGA) or any other wrapper — GGA would only matter for an integration test, which
+this harness does not do. The three versions are supplied as three plain files
+(see *Getting the three versions* below); you do not need three repo checkouts.
 
 Two independent read cutoffs are swept, named consistently everywhere:
 
@@ -14,11 +22,15 @@ Two independent read cutoffs are swept, named consistently everywhere:
 
 It answers:
 
-1. **Do the two scripts agree?** For each `(preFilt, callThresh)` cell, the
-   original and refactored BED body and detail file are compared by md5.
-2. **Time and memory across calling thresholds** — the `callThresh` axis.
-3. **With vs. without pre-filtering, for both scripts** — the `preFilt` axis
-   (`preFilt=1` is the "without" baseline).
+1. **Do original and refac agree?** For each `(preFilt, callThresh)` cell, the
+   `original` and `refac` BED body and detail file are compared by md5 — they are
+   meant to be byte-identical. `improved` is **excluded from the identity check by
+   design**: it differs from the other two only by the recovered terminal uTSS, so
+   its delta is characterized with `analyze_overlap.py` instead.
+2. **Time and memory across calling thresholds** — the `callThresh` axis, for all
+   three versions.
+3. **With vs. without pre-filtering** — the `preFilt` axis (`preFilt=1` is the
+   "without" baseline).
 4. **How the peak universe changes** — `analyze_overlap.py` reports exact /
    shifted / unique peaks across levels, split by TSS type.
 
@@ -36,16 +48,38 @@ It answers:
 | `equivalence/`      | standalone fuzz tests proving the rewritten hot paths match upstream |
 | `RESULTS.md`        | distilled headline numbers from the validation run |
 
+## Getting the three versions
+
+The three versions are published as git **tags** on `TSScall` `main`
+(`original`, `refac`, `improved`), so you extract them as three plain files into
+one directory — no extra repo checkouts, no worktrees, no branch-per-version:
+
+```bash
+mkdir -p ~/tsscall_bench/versions
+cd /path/to/TSScall            # your existing checkout; it stays on its branch
+git fetch origin --tags
+git show original:TSScall.py > ~/tsscall_bench/versions/TSScall_original.py
+git show refac:TSScall.py    > ~/tsscall_bench/versions/TSScall_refac.py
+git show improved:TSScall.py > ~/tsscall_bench/versions/TSScall_improved.py
+```
+
+Point the three `*_SCRIPT` paths in `config.sh` at those files. (To compare a
+different pair later, extract whatever tags/commits you want the same way.)
+
 ## Quick start
 
-1. Edit `config.sh`:
-   - `ORIG_SCRIPT`, `REFAC_SCRIPT`
+1. Get the three versions (above), then edit `config.sh`:
+   - `ORIG_SCRIPT`, `REFAC_SCRIPT`, `IMPROVED_SCRIPT` — the three extracted files
    - `FWD`, `REV`, `CHROMSIZES`, `GTF`, `EXPNAME`
    - `ENV_SETUP` — your cluster's `module load` / `conda activate` lines.
-     The refactored TSScall **and** `analyze_overlap.py` need numpy in that env.
+     TSScall is run **bare** here (not through GGA); the env just has to provide
+     the interpreter and dependencies. `original` needs only Python; `refac` needs
+     **numpy**; `improved` (and `analyze_overlap.py`) need **numpy + pandas**. The
+     `gga` conda env already has all of these, so `conda activate gga` is the
+     simplest choice — any env with numpy+pandas works equally well.
    - `PARTITION`, `JOB_MEM`, `JOB_TIME`
-   - optionally the sweeps `PREFILT_LEVELS`, `CALLTHRESH_LEVELS`, and the overlap
-     match window `OVERLAP_MAX_SHIFT`
+   - optionally the sweeps `PREFILT_LEVELS`, `CALLTHRESH_LEVELS`, `SCRIPTS`, and the
+     overlap match window `OVERLAP_MAX_SHIFT`
 2. Preview without submitting: `./submit_all.sh --dry`
 3. Submit: `./submit_all.sh`
 
@@ -61,11 +95,16 @@ collate succeeds.
 conditions = SCRIPTS x PREFILT_LEVELS x CALLTHRESH_LEVELS
 ```
 
-Defaults: `{orig, refac} x {1, 4, 8} x {4, 6, 8, 10}` = 24 jobs, plus 3
-pre-filter jobs, 1 collate job, and 1 overlap job. The fixed flags mirror the
+Defaults: `{orig, refac, improved} x {1, 4, 8} x {4, 6, 8, 10}` = 36 jobs, plus 3
+pre-filter jobs, 1 collate job, and 1 overlap job. (`SCRIPTS` in `config.sh`
+selects the versions; drop one to shrink the matrix.) The fixed flags mirror the
 production invocation: `--annotation_join_distance 500
 --annotation_search_window 1000`, with `--annotation_file`, `--detail_file`,
 `--set_read_threshold`, and the input/output paths supplied per job.
+
+Expected at full depth: the `preFilt=1` (no pre-filter) cells for **orig** OOM on
+a typical node ceiling — that is the headline result, recorded as a non-zero
+return code, not a harness failure — while `refac` and `improved` complete.
 
 Note: when `callThresh < preFilt`, the pre-filter floor masks the calling
 threshold (e.g. every `preFilt=8, callThresh<8` cell is identical), so only
@@ -79,9 +118,11 @@ Under `results_<EXPNAME>/`:
   wall seconds, MaxRSS (`/usr/bin/time -v`), sacct MaxRSS/Elapsed cross-check,
   BED line count, BED/detail md5s.
 - `comparison.tsv` — one row per `(preFilt, callThresh)`: `bed_identical`,
-  `detail_identical` (YES/NO), plus orig/refac wall time and peak memory.
-- `benchmark.tsv` — tidy time + peak-memory table (MaxRSS also in GB); the one
-  to plot.
+  `detail_identical` (YES/NO), plus orig/refac wall time and peak memory. This is
+  the **orig-vs-refac identity** table; `improved` is not in it (it is expected to
+  differ by the terminal uTSS — quantify that with `analyze_overlap.py`).
+- `benchmark.tsv` — tidy time + peak-memory table (MaxRSS also in GB) for **all
+  three** versions; the one to plot.
 - `overlap_summary.tsv` / `overlap_by_type.tsv` / `overlap_shift_histogram.tsv`
   — peak-universe analytics (see below).
 - `peak_dumps/<comparison>/` — `lost_from_reference.bed`, `gained_in_other.bed`,
@@ -120,24 +161,29 @@ bedtools required.
 
 ## Equivalence tests (`equivalence/`)
 
-Two standalone fuzz tests prove the refactor's two rewritten hot paths return
-exactly what the original code returns, on randomized inputs. They need only
-Python and numpy — no SLURM, no cluster, no data files — and are the
+Five standalone fuzz tests prove each rewritten hot path returns exactly what the
+original (or intended) code returns, on tens of thousands of randomized inputs.
+They need only Python + numpy — no SLURM, no cluster, no data files — and are the
 machine-checkable core of the "byte-identical" claim.
 
 ```bash
 cd equivalence
 python binwinner_equiv.py     # bin_winner two-pointer vs. original nested loop
-python filter_equiv.py        # grouped filter vs. original filterBedGraphListByWindows
+python filter_equiv.py        # grouped searchsorted filter vs. intended behavior
+python parse_equiv.py         # pandas/numpy bedGraph parse vs. per-line Python read
+python intersect_equiv.py     # searchsorted window intersection vs. cursor walk
+python int32_equiv.py         # int32 coverage arrays + an explicit >2^31 overflow check
 ```
 
-Each prints a trial count and a mismatch count and ends in `PASS` (0
-mismatches) or `FAIL`. `binwinner_equiv.py` also runs a fixed-tiling model — the
-plausible-but-wrong refactor — and reports how often it diverges from the
-original, as a control that the test can actually detect a bad implementation.
-Expected: `bin_winner` 60,000 trials / 0 mismatches (tiling diverges on
-~19,800); filter 40,000 trials / 0 mismatches. See
-[`RESULTS.md`](RESULTS.md) for the recorded numbers.
+Each prints a trial count and a mismatch count and ends in `PASS` (0 mismatches)
+or `FAIL`. Several also run a plausible-but-wrong variant as a **negative control**,
+reporting how often it diverges, to confirm the test can actually detect a bad
+implementation: `binwinner_equiv` runs a fixed-tiling model, `intersect_equiv` an
+overlapping-window case, and `filter_equiv` reports how often the removed filter
+tail-drop would have changed the result. Expected (0 mismatches each):
+`binwinner` 60,000 (tiling diverges on ~19,800), `filter` 40,000 (tail-drop fired
+on ~29,700), `parse` 20,000, `intersect` 40,000 (overlapping control ~7,400),
+`int32` 20,000. See [`RESULTS.md`](RESULTS.md) for the recorded numbers.
 
 ## Notes
 
