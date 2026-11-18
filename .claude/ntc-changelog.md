@@ -12,3 +12,6 @@ Entry format (newest first):
 ```
 
 <!-- entries below, newest first -->
+
+## 2026-11-26 · claude/vibrant-clarke-6uqmti
+- PERFORMANCE.md: added real-data 3-way benchmark (Armstrong005 hg38) — orig==refac byte-identical (8/8 completed cells), 10–184× speedup, raw-original time-bound (~46 GB, >24 h DNF); refac/improved do raw in minutes. affects results: no (doc)

@@ -156,28 +156,72 @@ The dict-per-position expansion is exactly what the columnar arrays replace,
 which is why the gap between original and refactored widens with depth — modest
 on small pre-filtered inputs, decisive at full depth.
 
-### Further optimizations (changes 5–8): synthetic 3-way, real-data pending
+### Three-way, full-depth real data (Armstrong005 PRO-seq, hg38)
 
 The table above is **original vs. the bin_winner-refactor baseline**
-(changes 1–4). Changes 5–8 (C-level parse, searchsorted intersection/filter,
-columnar hits) add more speed and memory on top; full-depth real-data numbers
-for this "improved" build are pending the cluster run. The
-[`benchmark/`](benchmark/) harness is wired for a three-way comparison
-(`SCRIPTS=(orig refac improved)` in `config.sh`), recording wall time and peak
-RSS per cell. As a stand-in, a 6 M-position synthetic
-(`--set_read_threshold 8`, with annotation) gives:
+(changes 1–4) on a higher-depth set. A separate three-way run
+(`original` / `refac` / `improved`) exercises changes 5–8 on real data: a
+full-depth Armstrong005 PRO-seq dataset (hg38; 5′ strand-split bedGraphs
+~1.6 GB/strand), matrix `preFilt ∈ {1,4,8}` × `callThresh ∈ {4,6,8,10}`, with
+`original` on 120 GB/24 h and the refactored branches on 36 GB/8 h.
 
-| version | wall time | peak RSS |
-|:--|--:|--:|
-| original (pristine Lavender) | 71.6 s | 2.20 GB |
-| refac baseline (changes 1–4) | 18.3 s | 0.87 GB |
-| improved (changes 1–8) | 8.0 s | 0.64 GB |
+**Byte-identity, confirmed on real data.** Every cell where the original
+completed (`preFilt` 4 and 8, all `callThresh`) is **md5-identical** between
+`original` and `refac` — BED body and detail file both, 8/8 cells, zero
+mismatches. The refactor reproduces the original bit-for-bit on real hg38
+coverage, not only on the synthetic.
 
-On this synthetic the improved build is ~9× faster and ~3.4× leaner than the
-original, and ~2.3× faster than the refac baseline. The synthetic over-weights
-the uTSS-calling path (it is unusually uTSS-dense), so the *shape* of the gain
-on real data will differ — the full-depth cluster run is the authoritative
-measurement.
+**Raw (`preFilt=1`) original is impractical — here, by time.** At 120 GB the
+raw original held a flat ~46 GB (it does *not* OOM at this depth) but could not
+finish the O(H²) calling within 24 h. So raw-original fails one way or the other
+depending on depth — OOM at the higher depth above, out-of-time here — while the
+refactor does raw in minutes.
+
+| preFilt | callThresh | orig wall | refac wall | improved wall | orig GB | refac GB | improved GB |
+|:--:|:--:|--:|--:|--:|--:|--:|--:|
+| 1 (raw) | 4  | >24 h DNF | 415 s | 185 s | ~46\* | 13.0 | 8.1 |
+| 1 (raw) | 6  | >24 h DNF | 320 s | 125 s | ~46\* | 10.9 | 8.1 |
+| 1 (raw) | 8  | >24 h DNF | 259 s | 208 s | ~46\* | 9.6  | 8.1 |
+| 1 (raw) | 10 | >24 h DNF | 243 s | 171 s | ~46\* | 8.7  | 8.1 |
+| 4 | 4  | 11,440 s (3.2 h) | 62 s | 92 s | 4.40 | 2.40 | 2.16 |
+| 4 | 6  | 3,388 s | 52 s | 80 s | 4.01 | 2.10 | 1.61 |
+| 4 | 8  | 1,826 s | 54 s | 62 s | 3.83 | 1.93 | 1.39 |
+| 4 | 10 | 1,424 s | 52 s | 55 s | 3.72 | 1.83 | 1.28 |
+| 8 | 4  | 797 s | 44 s | 54 s | 1.99 | 1.40 | 1.38 |
+| 8 | 6  | 758 s | 44 s | 54 s | 1.99 | 1.40 | 1.38 |
+| 8 | 8  | 591 s | 44 s | 50 s | 1.93 | 1.33 | 1.23 |
+| 8 | 10 | 436 s | 43 s | 47 s | 1.85 | 1.25 | 1.11 |
+
+\*raw-original RSS from `sstat` at ~6 h (flat); the job never completed, so no
+metrics row was written.
+
+Where the original completes, the refactor is **10–184×** faster — largest on
+the densest `preFilt4/callThresh4` cell, where the O(H²) cost was worst — with
+identical output. Two further reads:
+
+- **int32 + columnar hits (changes 4, 8) pay off at raw.** At `preFilt=1`,
+  `improved` holds a flat **8.1 GB** regardless of threshold, while `refac`'s
+  Python-list hit storage grows as the threshold drops (8.7 → 13.0 GB), and
+  `improved` runs **1.25–2.6× faster** than `refac` on raw. In the raw regime
+  the fork recommends, improved is both the fastest and the leanest.
+- **On heavily pre-filtered (small) inputs `improved` is marginally slower than
+  `refac`** (e.g. 92 vs 62 s at `preFilt4/callThresh4`): the pandas-parse and
+  interpreter-startup fixed cost, plus the extra terminal-uTSS work, is not
+  amortized on small inputs. That is the pre-filtered regime the fork argues
+  *against*, and it does not affect the raw recommendation.
+
+**Terminal-uTSS fix on real data.** `improved` emits **+5 to +10** BED lines
+versus `refac`/`original` across every cell (vs. +1–2 on the synthetic) — the
+terminal uTSS the two legacy bugs dropped, recovered; the larger count is
+consistent with real hg38's denser terminal-region coverage. The overlap
+analysis (`benchmark/analyze_overlap.py`) is the check that this delta is
+confined to the terminal region with no existing call's coordinates changed
+(as it was on the synthetic); the real-data overlap pass is pending.
+
+For reference, a 6 M-position synthetic (`--set_read_threshold 8`, with
+annotation) gave original 71.6 s / 2.20 GB, refac 18.3 s / 0.87 GB, improved
+8.0 s / 0.64 GB; it over-weights the uTSS path, so the real-data table above is
+the authoritative measurement.
 
 ## Pre-filtering is unnecessary and lossy
 
