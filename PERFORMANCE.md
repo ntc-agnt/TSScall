@@ -213,10 +213,14 @@ identical output. Two further reads:
 **Terminal-uTSS fix on real data.** `improved` emits **+5 to +10** BED lines
 versus `refac`/`original` across every cell (vs. +1–2 on the synthetic) — the
 terminal uTSS the two legacy bugs dropped, recovered; the larger count is
-consistent with real hg38's denser terminal-region coverage. The overlap
-analysis (`benchmark/analyze_overlap.py`) is the check that this delta is
-confined to the terminal region with no existing call's coordinates changed
-(as it was on the synthetic); the real-data overlap pass is pending.
+consistent with real hg38's denser terminal-region coverage. A direct
+improved-vs-refac BED diff confirms the signature on real data: the delta is
+**all additions, zero removals** (e.g. +5 at `preFilt4/callThresh8`), every one
+a `uTSS` carrying the highest IDs, all on **chrY, minus strand** — the
+lexically-last chromosome and last-processed group, exactly where the two
+terminal bugs sat — with **no existing call's coordinates changed**. So
+`improved` differs from `refac`/`original` only by the recovered terminal uTSS,
+on real hg38 as on the synthetic.
 
 For reference, a 6 M-position synthetic (`--set_read_threshold 8`, with
 annotation) gave original 71.6 s / 2.20 GB, refac 18.3 s / 0.87 GB, improved
