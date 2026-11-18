@@ -156,12 +156,12 @@ The dict-per-position expansion is exactly what the columnar arrays replace,
 which is why the gap between original and refactored widens with depth — modest
 on small pre-filtered inputs, decisive at full depth.
 
-### Three-way, full-depth real data (Armstrong005 PRO-seq, hg38)
+### Three-way, full-depth real data (hg38 PRO-seq)
 
 The table above is **original vs. the bin_winner-refactor baseline**
 (changes 1–4) on a higher-depth set. A separate three-way run
 (`original` / `refac` / `improved`) exercises changes 5–8 on real data: a
-full-depth Armstrong005 PRO-seq dataset (hg38; 5′ strand-split bedGraphs
+full-depth hg38 PRO-seq dataset (5′ strand-split bedGraphs
 ~1.6 GB/strand), matrix `preFilt ∈ {1,4,8}` × `callThresh ∈ {4,6,8,10}`, with
 `original` on 120 GB/24 h and the refactored branches on 36 GB/8 h.
 

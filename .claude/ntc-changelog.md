@@ -14,4 +14,5 @@ Entry format (newest first):
 <!-- entries below, newest first -->
 
 ## 2026-11-26 · claude/vibrant-clarke-6uqmti
-- PERFORMANCE.md: added real-data 3-way benchmark (Armstrong005 hg38) — orig==refac byte-identical (8/8 completed cells), 10–184× speedup, raw-original time-bound (~46 GB, >24 h DNF); refac/improved do raw in minutes. affects results: no (doc)
+- docs/thresholding_and_prefiltering.md: folded in genome-wide pre-filter reshuffle numbers (min4 vs raw: 4.2% dropped / 5.3% added at call-min 8) as whole-dataset confirmation of §1 non-monotonicity; anonymized the dataset name in the public docs. affects results: no (doc)
+- PERFORMANCE.md: added real-data 3-way benchmark (hg38) — orig==refac byte-identical (8/8 completed cells), 10–184× speedup, raw-original time-bound (~46 GB, >24 h DNF); terminal-uTSS delta localized to chrY minus strand (additions only). affects results: no (doc)

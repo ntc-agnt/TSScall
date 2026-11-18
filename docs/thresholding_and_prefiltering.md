@@ -59,7 +59,7 @@ of setting `--set_read_threshold` explicitly.
 
 ## Evidence
 
-All evidence is from one PRO-seq dataset (Armstrong005), run through GGA two
+All evidence is from one full-depth hg38 PRO-seq dataset, run through GGA two
 ways:
 
 - **master** = original TSScall + **min-4 pre-filtered** bedGraphs
@@ -97,6 +97,19 @@ Across the 8: pre-filter **helps 2, hurts 3, neutral/erratic 3**. Two takeaways:
 Identical results at ±20 kb and ±50 kb windows — obsTSS calling is
 window-size-invariant (the search window is ±1 kb around the annotated TSS), so
 this is not a window-clipping artifact.
+
+**Genome-wide, the reshuffle is not confined to hard loci.** Comparing the full
+called-peak universe (obsTSS + uTSS) of raw vs. min-4 pre-filtered bedGraphs at
+the production calling threshold (`--set_read_threshold 8`), pre-filtering
+**drops 4.2% of the raw peaks and adds 5.3% that are absent from raw**, with a
+further ~3,000 peaks shifted. The min-4 set is thus neither a subset nor a
+superset of raw but a two-directional reshuffle of comparable magnitude. It
+scales with pre-filter aggressiveness (min-8 vs raw at the same threshold: 5.6%
+dropped / 7.3% added) and shrinks toward higher calling thresholds (min-4 vs raw
+ranges from 7.4% / 8.3% at a min-4 call cutoff to 3.3% / 4.3% at min-10) but is
+never one-directional. This is the whole-dataset confirmation of the per-locus
+non-monotonicity above — pre-filtering reshuffles the peak set, it does not
+subtract noise from it.
 
 ### 2. Call method: `global` does not help
 
@@ -162,7 +175,7 @@ agreement wiggles as noisy — the min4→min8 improvement is the signal.)
 
 ## Where the GGA "shifts" actually come from
 
-In the Armstrong005 comparison, ~2.2% of genes differ between min4 and raw:
+In the min4-vs-raw comparison, ~2.2% of genes differ:
 166 `tss_shift`, 97 `lost_from_baseline`, 21 `new_in_test`, 11
 `tss_and_tes_shift`, 3 `tes_shift` (of 13,769 genes).
 
@@ -190,7 +203,8 @@ full-depth reads, so the surviving call is the better-supported one.
 ## Scope and caveats
 
 - Evidence is from one PRO-seq dataset. The 8-locus coverage analysis is a small
-  illustrative sample; the 166-shift decomposition is the **full** shifted set.
+  illustrative sample; the 166-shift decomposition is the **full** shifted set,
+  and the genome-wide peak-overlap in §1 covers the entire called-peak universe.
 - The annotation yardstick is the Ensembl GTF GGA used. A RefSeq cross-check is
   pending, but the non-monotonicity (§1) and the branch decomposition are
   yardstick-independent.
